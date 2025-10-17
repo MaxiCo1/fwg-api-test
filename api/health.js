@@ -1,34 +1,7 @@
 // /api/health.js
-const serverless = require('serverless-http');
-const express = require('express');
 const { google } = require('googleapis');
 const { GoogleAuth } = require('google-auth-library');
-const cors = require('cors');
 
-const app = express();
-
-// --- Configuración CORS ---
-const allowedOrigins = [
-  "https://fwg-apply-form.vercel.app",
-  "https://fwg-form-test.vercel.app",
-  "https://thefreewebsiteguys.com",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:5500"
-];
-
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ["GET", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-}));
-
-// --- Google Sheets setup ---
 let sheetsEnabled = false;
 
 async function checkSheets() {
@@ -55,8 +28,8 @@ async function checkSheets() {
   }
 }
 
-// --- Endpoint Health ---
-app.get("/", async (req, res) => {
+// Endpoint Vercel
+module.exports = async (req, res) => {
   await checkSheets();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -66,7 +39,4 @@ app.get("/", async (req, res) => {
     status: "OK",
     sheets: sheetsEnabled ? "CONNECTED" : "DISCONNECTED"
   });
-});
-
-module.exports = app;
-module.exports.handler = serverless(app);
+};
