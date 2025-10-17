@@ -13,7 +13,7 @@ const app = express();
 
 // Middleware
 app.use(cors({ 
-  origin: ["http://127.0.0.1:5500", "http://localhost:3000", "https://thefreewebsiteguys.com"],
+  origin: ["http://127.0.0.1:5500", "http://localhost:3000", "https://thefreewebsiteguys.com","https://fwg-api-test.vercel.app",],
   credentials: true 
 }));
 app.use(bodyParser.json());
