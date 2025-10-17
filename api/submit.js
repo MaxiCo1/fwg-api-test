@@ -151,7 +151,7 @@ app.options("*", (req, res) => {
   res.status(200).end();
 });
 
-app.post("/submit", async (req, res) => {
+app.post("/", async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
