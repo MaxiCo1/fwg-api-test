@@ -9,25 +9,26 @@ const { GoogleAuth } = require('google-auth-library');
 const app = express();
 
 // --- Configuración CORS ---
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      "https://fwg-apply-form.vercel.app",
-      "https://fwg-form-test.vercel.app",
-      "https://thefreewebsiteguys.com",
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://127.0.0.1:5500"
-    ];
+const allowedOrigins = [
+  "https://fwg-apply-form.vercel.app",
+  "https://fwg-form-test.vercel.app",
+  "https://thefreewebsiteguys.com",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5500"
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) callback(null, true);
-    else callback(new Error('Not allowed by CORS'));
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
-app.use(cors(corsOptions));
+  methods: ["GET","POST","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization","X-Requested-With"]
+}));
+
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -51,8 +52,7 @@ async function initializeSheets() {
     });
 
     sheets = google.sheets({ version: "v4", auth });
-    
-    // Test conexión
+
     const testResponse = await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
     console.log(`✅ Conectado a Google Sheets: ${testResponse.data.properties.title}`);
     sheetsEnabled = true;
@@ -143,11 +143,17 @@ app.use((req, res, next) => {
 });
 
 // --- Rutas ---
-app.options("/submit", (req, res) => res.status(200).end());
+app.options("*", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.status(200).end();
+});
 
 app.post("/submit", async (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   try {
     const { application, metadata } = req.body;
@@ -170,7 +176,11 @@ app.post("/submit", async (req, res) => {
   }
 });
 
-app.get("/health", (req, res) => res.json({ status: "OK", sheets: sheetsEnabled ? "CONNECTED" : "DISCONNECTED" }));
+app.get("/health", (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.json({ status: "OK", sheets: sheetsEnabled ? "CONNECTED" : "DISCONNECTED" });
+});
 
 // --- Exportar para Vercel ---
 module.exports = app;
