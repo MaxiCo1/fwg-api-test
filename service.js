@@ -9,16 +9,23 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
+// Middleware CORS actualizado
 app.use(cors({ 
   origin: [
     "http://127.0.0.1:5500", 
     "http://localhost:3000", 
     "https://thefreewebsiteguys.com",
-    "https://fwg-api-test.vercel.app"
+    "https://fwg-api-test.vercel.app",
+    "https://fwg-form-test.vercel.app" // ✅ Nueva URL agregada
   ],
-  credentials: true 
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Manejar preflight requests explícitamente
+app.options('*', cors());
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -126,7 +133,7 @@ async function saveToSheets(row) {
 
   const response = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:AQ`, // ✅ Asegúrate de que el rango coincida con tus columnas
+    range: `${SHEET_NAME}!A1`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { 
@@ -138,8 +145,17 @@ async function saveToSheets(row) {
 }
 
 app.post("/submit", async (req, res) => {
+  // Headers CORS adicionales para esta ruta específica
+  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   try {
     console.log("📨 Received submission request");
+    console.log("🌐 Origin:", req.headers.origin);
+    console.log("📧 User Agent:", req.headers['user-agent']);
+    
     const { application, metadata } = req.body;
 
     if (!application) {
@@ -178,18 +194,42 @@ app.post("/submit", async (req, res) => {
 });
 
 app.get("/health", (req, res) => {
+  // Headers CORS para health check
+  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.status(200).json({ 
     status: "OK", 
     sheets_api: sheetsEnabled ? "ENABLED" : "DISABLED",
     environment: process.env.NODE_ENV || 'local',
+    timestamp: new Date().toISOString(),
+    allowed_origins: [
+      "https://fwg-form-test.vercel.app",
+      "https://thefreewebsiteguys.com"
+    ]
+  });
+});
+
+// Ruta específica para testing CORS
+app.get("/cors-test", (req, res) => {
+  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  res.status(200).json({ 
+    message: "CORS test successful",
+    origin: req.headers.origin,
     timestamp: new Date().toISOString()
   });
 });
 
 app.all('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
   res.status(404).json({ 
     success: false, 
-    error: "Route not found" 
+    error: "Route not found",
+    allowed_routes: ["/submit", "/health", "/cors-test"] 
   });
 });
 
@@ -199,6 +239,8 @@ if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`🚀 Server running locally on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    console.log(`🔧 CORS test: http://localhost:${PORT}/cors-test`);
+    console.log(`✅ Allowing CORS for: https://fwg-form-test.vercel.app`);
   });
 }
 
