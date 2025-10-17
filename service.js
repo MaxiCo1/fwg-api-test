@@ -4,35 +4,41 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const { GoogleAuth } = require('google-auth-library');
 
-// ✅ Cargar variables .env en todos los entornos para consistencia
 require('dotenv').config();
 
 const app = express();
 
-// Configuración CORS actualizada con las URLs correctas
+// ✅ Configuración CORS simplificada y única
 const corsOptions = {
-  origin: [
-    "http://127.0.0.1:5500", 
-    "http://localhost:3000", 
-    "http://localhost:5173",
-    "https://thefreewebsiteguys.com",
-    "https://fwg-api-test.vercel.app",
-    "https://fwg-form-test.vercel.app",
-    "https://fwg-apply-form.vercel.app" // ✅ Nueva URL del frontend
-  ],
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "https://fwg-apply-form.vercel.app",
+      "https://fwg-form-test.vercel.app",
+      "https://thefreewebsiteguys.com",
+      "http://localhost:3000", 
+      "http://localhost:5173",
+      "http://127.0.0.1:5500"
+    ];
+    
+    // Permitir requests sin origin (como mobile apps o postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log(`❌ CORS bloqueado para origen: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
-// Aplicar CORS a todas las rutas
+// Aplicar CORS una sola vez
 app.use(cors(corsOptions));
-
-// Manejar preflight requests explícitamente para todas las rutas
-app.options('*', cors(corsOptions));
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // Configuración de Google Sheets
 let sheets;
@@ -41,47 +47,39 @@ let sheetsEnabled = false;
 async function initializeSheets() {
   try {
     console.log("🔄 Initializing Google Sheets API...");
-    console.log("📋 Environment:", process.env.NODE_ENV);
-    console.log("📧 Client Email:", process.env.GOOGLE_CLIENT_EMAIL);
     
-    // ✅ Manejo robusto de la clave privada
+    if (!process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error("GOOGLE_PRIVATE_KEY no está definido");
+    }
+    if (!process.env.SPREADSHEET_ID) {
+      throw new Error("SPREADSHEET_ID no está definido");
+    }
+
     const privateKey = process.env.GOOGLE_PRIVATE_KEY
       ?.replace(/\\n/g, '\n')
       ?.replace(/\\\\n/g, '\n')
       ?.replace(/"/g, '');
-    
-    if (!privateKey) {
-      throw new Error("GOOGLE_PRIVATE_KEY is not defined");
-    }
 
     const auth = new GoogleAuth({
       credentials: {
-        type: "service_account",
-        project_id: process.env.GOOGLE_PROJECT_ID,
-        private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-        private_key: privateKey,
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        auth_uri: process.env.GOOGLE_AUTH_URI,
-        token_uri: process.env.GOOGLE_TOKEN_URI,
-        auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_CERT_URL,
-        client_x509_cert_url: process.env.GOOGLE_CLIENT_CERT_URL,
-        universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN
+        private_key: privateKey,
       },
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
     sheets = google.sheets({ version: "v4", auth });
     
-    // Test connection
-    await sheets.spreadsheets.get({
+    // Test de conexión real
+    const testResponse = await sheets.spreadsheets.get({
       spreadsheetId: process.env.SPREADSHEET_ID
     });
     
+    console.log(`✅ Conectado a Google Sheets: ${testResponse.data.properties.title}`);
     sheetsEnabled = true;
-    console.log("✅ Google Sheets API configured successfully");
+    
   } catch (error) {
-    console.error("❌ Google Sheets API initialization failed:", error.message);
+    console.error("❌ Error inicializando Google Sheets:", error.message);
     sheetsEnabled = false;
   }
 }
@@ -91,7 +89,29 @@ initializeSheets();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = "Hoja 1";
 
+function validateApplicationData(application) {
+  const errors = [];
+  
+  if (!application?.first_name?.trim()) {
+    errors.push("El nombre es requerido");
+  }
+  
+  if (!application?.email_address?.trim()) {
+    errors.push("El email es requerido");
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(application.email_address)) {
+    errors.push("El formato del email es inválido");
+  }
+  
+  if (!application?.project_description?.trim()) {
+    errors.push("La descripción del proyecto es requerida");
+  }
+  
+  return errors;
+}
+
 function prepareRow(application, metadata) {
+  const timestamp = new Date().toISOString();
+  
   return [
     application.project_description || "",
     application.first_name || "",
@@ -102,7 +122,7 @@ function prepareRow(application, metadata) {
     application.utm_medium || "",
     application.utm_campaign || "",
     application.utm_source || "",
-    new Date().toISOString(),
+    timestamp,
     application.sessionInstanceUUID || "",
     application.affiliate_id || "",
     application.completed ? "1" : "0",
@@ -132,166 +152,157 @@ function prepareRow(application, metadata) {
 }
 
 async function saveToSheets(row) {
-  if (!sheetsEnabled || !sheets) {
-    throw new Error("Google Sheets API not enabled");
+  if (!sheetsEnabled) {
+    throw new Error("Google Sheets API no está habilitada");
   }
 
-  const response = await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
-    valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { 
-      values: [row] 
-    },
-  });
+  try {
+    const response = await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:AZ`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { 
+        values: [row] 
+      },
+    });
 
-  return response;
+    console.log(`✅ Datos guardados en fila: ${response.data.updates?.updatedRange}`);
+    return response;
+    
+  } catch (error) {
+    console.error("❌ Error guardando en Sheets:", error.message);
+    if (error.response) {
+      console.error("Detalles del error:", error.response.data);
+    }
+    throw error;
+  }
 }
 
-// Middleware para headers CORS - Configuración simplificada
+// ✅ Middleware mejorado para logging
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    // ✅ Tu único frontend en producción
-    "https://fwg-apply-form.vercel.app",
-    
-    // ✅ URLs de desarrollo local
-    "http://localhost:3000", 
-    "http://localhost:5173",
-    "http://127.0.0.1:5500"
-  ];
-  
-  const origin = req.headers.origin;
-  
-  // Permitir solo los orígenes específicos de la lista
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  // En desarrollo, puedes ser más permisivo si es necesario
-  else if (process.env.NODE_ENV === 'development' && origin) {
-    console.log(`⚠️  Allowing non-listed origin in development: ${origin}`);
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-auth-token');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    console.log(`🛫 Handling OPTIONS preflight from: ${origin}`);
-    return res.status(200).end();
-  }
-  
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
   next();
 });
 
+// ✅ Ruta OPTIONS específica para /submit
+app.options("/submit", (req, res) => {
+  console.log("🛫 Preflight OPTIONS para /submit");
+  res.status(200).end();
+});
+
 app.post("/submit", async (req, res) => {
+  // ✅ HEADERS CORS explícitos para la respuesta
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://fwg-apply-form.vercel.app');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   try {
-    console.log("📨 Received submission request");
-    console.log("🌐 Origin:", req.headers.origin);
-    console.log("📧 User Agent:", req.headers['user-agent']);
-    console.log("🔧 Method:", req.method);
-    
+    console.log("📨 Recibiendo solicitud de envío");
+    console.log("📝 Body recibido:", JSON.stringify(req.body, null, 2));
+
     const { application, metadata } = req.body;
 
     if (!application) {
+      console.log("❌ Datos de aplicación no recibidos");
       return res.status(400).json({ 
         success: false, 
-        error: "Application data is required" 
+        error: "Datos de aplicación requeridos" 
       });
     }
 
-    console.log("📝 Application data:", {
-      project_description: application.project_description,
-      first_name: application.first_name,
+    // ✅ Validación completa de datos
+    const validationErrors = validateApplicationData(application);
+    if (validationErrors.length > 0) {
+      console.log("❌ Errores de validación:", validationErrors);
+      return res.status(400).json({
+        success: false,
+        error: "Datos inválidos",
+        details: validationErrors
+      });
+    }
+
+    console.log("✅ Datos validados:", {
+      nombre: application.first_name,
       email: application.email_address,
-      completed: application.completed
+      proyecto: application.project_description?.substring(0, 50) + '...'
     });
 
+    // ✅ Verificar que Sheets esté habilitado
     if (!sheetsEnabled) {
-      console.log("❌ Sheets API not enabled");
-      return res.status(503).json({ 
-        success: false, 
-        error: "Service temporarily unavailable" 
-      });
+      console.log("❌ Sheets API no disponible");
+      await initializeSheets(); // Intentar reconectar
+      
+      if (!sheetsEnabled) {
+        return res.status(503).json({ 
+          success: false, 
+          error: "Servicio de almacenamiento no disponible temporalmente" 
+        });
+      }
     }
 
+    // ✅ Preparar y guardar datos
     const row = prepareRow(application, metadata);
-    await saveToSheets(row);
-
-    console.log("✅ Data saved successfully to Google Sheets");
-    res.status(200).json({ 
+    console.log("💾 Guardando en Google Sheets...");
+    
+    const sheetsResponse = await saveToSheets(row);
+    
+    console.log("✅ Datos guardados exitosamente en Google Sheets");
+    
+    // ✅ Respuesta de éxito
+    return res.status(200).json({ 
       success: true, 
-      message: "Data saved successfully",
-      environment: process.env.NODE_ENV || 'local',
-      frontend_origin: req.headers.origin
+      message: "Datos guardados exitosamente",
+      sheetsUpdated: true,
+      timestamp: new Date().toISOString()
     });
 
   } catch (err) {
-    console.error("❌ Error saving to Sheets:", err.message);
-    res.status(500).json({ 
+    console.error("❌ Error en /submit:", err.message);
+    console.error("Stack trace:", err.stack);
+    
+    return res.status(500).json({ 
       success: false, 
-      error: "Failed to save data",
-      details: err.message,
-      frontend_origin: req.headers.origin
+      error: "Error interno del servidor al guardar datos",
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+      sheetsEnabled: sheetsEnabled
     });
   }
 });
 
+// Rutas adicionales...
 app.get("/health", (req, res) => {
-  res.status(200).json({ 
+  res.json({ 
     status: "OK", 
-    sheets_api: sheetsEnabled ? "ENABLED" : "DISABLED",
-    environment: process.env.NODE_ENV || 'local',
-    timestamp: new Date().toISOString(),
-    allowed_origins: [
-      "https://fwg-apply-form.vercel.app",
-      "https://fwg-form-test.vercel.app",
-      "https://thefreewebsiteguys.com"
-    ],
-    backend_url: "https://fwg-api-test.vercel.app"
+    sheets: sheetsEnabled ? "CONNECTED" : "DISCONNECTED",
+    timestamp: new Date().toISOString()
   });
 });
 
-// Ruta específica para testing CORS
 app.get("/cors-test", (req, res) => {
-  res.status(200).json({ 
-    message: "CORS test successful",
+  res.json({ 
+    message: "CORS funcionando correctamente",
     origin: req.headers.origin,
-    timestamp: new Date().toISOString(),
-    cors: "enabled",
-    frontend_url: "https://fwg-apply-form.vercel.app",
-    backend_url: "https://fwg-api-test.vercel.app"
+    timestamp: new Date().toISOString()
   });
 });
 
-// Ruta OPTIONS específica para /submit
-app.options("/submit", (req, res) => {
-  console.log("🛫 Handling OPTIONS preflight for /submit from:", req.headers.origin);
-  res.status(200).end();
-});
-
-app.all('*', (req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    error: "Route not found",
-    allowed_routes: ["/submit", "/health", "/cors-test"],
-    frontend_url: "https://fwg-apply-form.vercel.app",
-    backend_url: "https://fwg-api-test.vercel.app"
+// ✅ Manejo global de errores
+app.use((error, req, res, next) => {
+  console.error("🔥 Error global no manejado:", error);
+  res.status(500).json({
+    success: false,
+    error: "Error interno del servidor"
   });
 });
 
-// ✅ Iniciar servidor solo en local
+// Iniciar servidor en desarrollo
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`🚀 Server running locally on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔧 CORS test: http://localhost:${PORT}/cors-test`);
-    console.log(`✅ Allowing CORS for: https://fwg-apply-form.vercel.app`);
-    console.log(`✅ Backend URL: https://fwg-api-test.vercel.app`);
+    console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
+    console.log(`✅ Health: http://localhost:${PORT}/health`);
+    console.log(`✅ CORS Test: http://localhost:${PORT}/cors-test`);
   });
 }
 
-// ✅ Export para Vercel
 module.exports = app;
