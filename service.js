@@ -9,22 +9,27 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware CORS actualizado
-app.use(cors({ 
+// Configuración CORS actualizada con las URLs correctas
+const corsOptions = {
   origin: [
     "http://127.0.0.1:5500", 
     "http://localhost:3000", 
+    "http://localhost:5173",
     "https://thefreewebsiteguys.com",
     "https://fwg-api-test.vercel.app",
-    "https://fwg-form-test.vercel.app" // ✅ Nueva URL agregada
+    "https://fwg-form-test.vercel.app",
+    "https://fwg-apply-form.vercel.app" // ✅ Nueva URL del frontend
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+};
 
-// Manejar preflight requests explícitamente
-app.options('*', cors());
+// Aplicar CORS a todas las rutas
+app.use(cors(corsOptions));
+
+// Manejar preflight requests explícitamente para todas las rutas
+app.options('*', cors(corsOptions));
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -144,17 +149,46 @@ async function saveToSheets(row) {
   return response;
 }
 
-app.post("/submit", async (req, res) => {
-  // Headers CORS adicionales para esta ruta específica
-  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
+// Middleware para agregar headers CORS manualmente
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    "http://127.0.0.1:5500", 
+    "http://localhost:3000", 
+    "http://localhost:5173",
+    "https://thefreewebsiteguys.com",
+    "https://fwg-api-test.vercel.app",
+    "https://fwg-form-test.vercel.app",
+    "https://fwg-apply-form.vercel.app" // ✅ Nueva URL del frontend
+  ];
   
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (process.env.NODE_ENV === 'development') {
+    // En desarrollo, permitir cualquier origen
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-auth-token');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
+  
+  // Respond immediately to OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    console.log(`🛫 Handling OPTIONS preflight from: ${origin}`);
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+app.post("/submit", async (req, res) => {
   try {
     console.log("📨 Received submission request");
     console.log("🌐 Origin:", req.headers.origin);
     console.log("📧 User Agent:", req.headers['user-agent']);
+    console.log("🔧 Method:", req.method);
     
     const { application, metadata } = req.body;
 
@@ -164,6 +198,13 @@ app.post("/submit", async (req, res) => {
         error: "Application data is required" 
       });
     }
+
+    console.log("📝 Application data:", {
+      project_description: application.project_description,
+      first_name: application.first_name,
+      email: application.email_address,
+      completed: application.completed
+    });
 
     if (!sheetsEnabled) {
       console.log("❌ Sheets API not enabled");
@@ -176,11 +217,12 @@ app.post("/submit", async (req, res) => {
     const row = prepareRow(application, metadata);
     await saveToSheets(row);
 
-    console.log("✅ Data saved successfully");
+    console.log("✅ Data saved successfully to Google Sheets");
     res.status(200).json({ 
       success: true, 
       message: "Data saved successfully",
-      environment: process.env.NODE_ENV || 'local'
+      environment: process.env.NODE_ENV || 'local',
+      frontend_origin: req.headers.origin
     });
 
   } catch (err) {
@@ -188,48 +230,52 @@ app.post("/submit", async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: "Failed to save data",
-      details: err.message 
+      details: err.message,
+      frontend_origin: req.headers.origin
     });
   }
 });
 
 app.get("/health", (req, res) => {
-  // Headers CORS para health check
-  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
   res.status(200).json({ 
     status: "OK", 
     sheets_api: sheetsEnabled ? "ENABLED" : "DISABLED",
     environment: process.env.NODE_ENV || 'local',
     timestamp: new Date().toISOString(),
     allowed_origins: [
+      "https://fwg-apply-form.vercel.app",
       "https://fwg-form-test.vercel.app",
       "https://thefreewebsiteguys.com"
-    ]
+    ],
+    backend_url: "https://fwg-api-test.vercel.app"
   });
 });
 
 // Ruta específica para testing CORS
 app.get("/cors-test", (req, res) => {
-  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
   res.status(200).json({ 
     message: "CORS test successful",
     origin: req.headers.origin,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    cors: "enabled",
+    frontend_url: "https://fwg-apply-form.vercel.app",
+    backend_url: "https://fwg-api-test.vercel.app"
   });
 });
 
+// Ruta OPTIONS específica para /submit
+app.options("/submit", (req, res) => {
+  console.log("🛫 Handling OPTIONS preflight for /submit from:", req.headers.origin);
+  res.status(200).end();
+});
+
 app.all('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', 'https://fwg-form-test.vercel.app');
   res.status(404).json({ 
     success: false, 
     error: "Route not found",
-    allowed_routes: ["/submit", "/health", "/cors-test"] 
+    allowed_routes: ["/submit", "/health", "/cors-test"],
+    frontend_url: "https://fwg-apply-form.vercel.app",
+    backend_url: "https://fwg-api-test.vercel.app"
   });
 });
 
@@ -240,7 +286,8 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`🚀 Server running locally on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🔧 CORS test: http://localhost:${PORT}/cors-test`);
-    console.log(`✅ Allowing CORS for: https://fwg-form-test.vercel.app`);
+    console.log(`✅ Allowing CORS for: https://fwg-apply-form.vercel.app`);
+    console.log(`✅ Backend URL: https://fwg-api-test.vercel.app`);
   });
 }
 
