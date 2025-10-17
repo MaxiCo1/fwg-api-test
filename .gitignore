@@ -1,0 +1,18 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Credentials
+credentials.json
+*.json
+service-account*
+*.key
+
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Runtime
+*.log
+.DS_Store
