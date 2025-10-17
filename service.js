@@ -149,32 +149,34 @@ async function saveToSheets(row) {
   return response;
 }
 
-// Middleware para agregar headers CORS manualmente
+// Middleware para headers CORS - Configuración simplificada
 app.use((req, res, next) => {
   const allowedOrigins = [
-    "http://127.0.0.1:5500", 
+    // ✅ Tu único frontend en producción
+    "https://fwg-apply-form.vercel.app",
+    
+    // ✅ URLs de desarrollo local
     "http://localhost:3000", 
     "http://localhost:5173",
-    "https://thefreewebsiteguys.com",
-    "https://fwg-api-test.vercel.app",
-    "https://fwg-form-test.vercel.app",
-    "https://fwg-apply-form.vercel.app" // ✅ Nueva URL del frontend
+    "http://127.0.0.1:5500"
   ];
   
   const origin = req.headers.origin;
+  
+  // Permitir solo los orígenes específicos de la lista
   if (allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
-  } else if (process.env.NODE_ENV === 'development') {
-    // En desarrollo, permitir cualquier origen
-    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  // En desarrollo, puedes ser más permisivo si es necesario
+  else if (process.env.NODE_ENV === 'development' && origin) {
+    console.log(`⚠️  Allowing non-listed origin in development: ${origin}`);
+    res.header('Access-Control-Allow-Origin', origin);
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-auth-token');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
   
-  // Respond immediately to OPTIONS requests
   if (req.method === 'OPTIONS') {
     console.log(`🛫 Handling OPTIONS preflight from: ${origin}`);
     return res.status(200).end();
