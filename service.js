@@ -4,16 +4,19 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const { GoogleAuth } = require('google-auth-library');
 
-// ✅ Cargar variables .env en local
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
+// ✅ Cargar variables .env en todos los entornos para consistencia
+require('dotenv').config();
 
 const app = express();
 
 // Middleware
 app.use(cors({ 
-  origin: ["http://127.0.0.1:5500", "http://localhost:3000", "https://thefreewebsiteguys.com","https://fwg-api-test.vercel.app",],
+  origin: [
+    "http://127.0.0.1:5500", 
+    "http://localhost:3000", 
+    "https://thefreewebsiteguys.com",
+    "https://fwg-api-test.vercel.app"
+  ],
   credentials: true 
 }));
 app.use(bodyParser.json());
@@ -25,13 +28,26 @@ let sheetsEnabled = false;
 
 async function initializeSheets() {
   try {
-    // ✅ FUNCIONA TANTO EN LOCAL COMO EN VERCEL
+    console.log("🔄 Initializing Google Sheets API...");
+    console.log("📋 Environment:", process.env.NODE_ENV);
+    console.log("📧 Client Email:", process.env.GOOGLE_CLIENT_EMAIL);
+    
+    // ✅ Manejo robusto de la clave privada
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY
+      ?.replace(/\\n/g, '\n')
+      ?.replace(/\\\\n/g, '\n')
+      ?.replace(/"/g, '');
+    
+    if (!privateKey) {
+      throw new Error("GOOGLE_PRIVATE_KEY is not defined");
+    }
+
     const auth = new GoogleAuth({
       credentials: {
         type: "service_account",
         project_id: process.env.GOOGLE_PROJECT_ID,
         private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: privateKey,
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
         client_id: process.env.GOOGLE_CLIENT_ID,
         auth_uri: process.env.GOOGLE_AUTH_URI,
@@ -45,14 +61,15 @@ async function initializeSheets() {
 
     sheets = google.sheets({ version: "v4", auth });
     
+    // Test connection
     await sheets.spreadsheets.get({
       spreadsheetId: process.env.SPREADSHEET_ID
     });
     
     sheetsEnabled = true;
-    console.log("✅ Google Sheets API configured - Environment:", process.env.NODE_ENV || 'local');
+    console.log("✅ Google Sheets API configured successfully");
   } catch (error) {
-    console.log("❌ Google Sheets API unavailable:", error.message);
+    console.error("❌ Google Sheets API initialization failed:", error.message);
     sheetsEnabled = false;
   }
 }
@@ -62,7 +79,6 @@ initializeSheets();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = "Hoja 1";
 
-// ... (las funciones prepareRow y saveToSheets se mantienen igual) ...
 function prepareRow(application, metadata) {
   return [
     application.project_description || "",
@@ -110,7 +126,7 @@ async function saveToSheets(row) {
 
   const response = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:A`,
+    range: `${SHEET_NAME}!A:AQ`, // ✅ Asegúrate de que el rango coincida con tus columnas
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { 
@@ -123,6 +139,7 @@ async function saveToSheets(row) {
 
 app.post("/submit", async (req, res) => {
   try {
+    console.log("📨 Received submission request");
     const { application, metadata } = req.body;
 
     if (!application) {
@@ -133,6 +150,7 @@ app.post("/submit", async (req, res) => {
     }
 
     if (!sheetsEnabled) {
+      console.log("❌ Sheets API not enabled");
       return res.status(503).json({ 
         success: false, 
         error: "Service temporarily unavailable" 
@@ -142,6 +160,7 @@ app.post("/submit", async (req, res) => {
     const row = prepareRow(application, metadata);
     await saveToSheets(row);
 
+    console.log("✅ Data saved successfully");
     res.status(200).json({ 
       success: true, 
       message: "Data saved successfully",
@@ -149,10 +168,11 @@ app.post("/submit", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Error saving to Sheets:", err.message);
+    console.error("❌ Error saving to Sheets:", err.message);
     res.status(500).json({ 
       success: false, 
-      error: "Failed to save data" 
+      error: "Failed to save data",
+      details: err.message 
     });
   }
 });
@@ -161,7 +181,8 @@ app.get("/health", (req, res) => {
   res.status(200).json({ 
     status: "OK", 
     sheets_api: sheetsEnabled ? "ENABLED" : "DISABLED",
-    environment: process.env.NODE_ENV || 'local'
+    environment: process.env.NODE_ENV || 'local',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -181,4 +202,5 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// ✅ Export para Vercel
 module.exports = app;
