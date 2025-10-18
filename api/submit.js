@@ -48,24 +48,28 @@ app.use((req, res, next) => {
   next();
 });
 
-// POST /api/submit con timeout
+
+// /api/submit.js - Solo la parte del POST endpoint
 app.post("/", async (req, res) => {
-  // Set timeout para evitar que se cuelgue
-  req.setTimeout(10000, () => {
-    console.log('Timeout en request');
-  });
+  console.log('🟡 Received POST to /api/submit');
   
   try {
     const { application, metadata } = req.body;
-    
+    console.log('📦 Body received:', { 
+      hasApplication: !!application,
+      hasMetadata: !!metadata,
+      email: application?.email_address 
+    });
+
     if (!application) {
+      console.log('❌ No application data');
       return res.status(400).json({ 
         success: false, 
         error: "Datos de aplicación requeridos" 
       });
     }
 
-    // Validación de campos requeridos
+    // Validación
     const errors = [];
     if (!application.first_name?.trim()) errors.push("El nombre es requerido");
     if (!application.email_address?.trim()) errors.push("El email es requerido");
@@ -74,6 +78,7 @@ app.post("/", async (req, res) => {
     if (!application.project_description?.trim()) errors.push("La descripción del proyecto es requerida");
 
     if (errors.length > 0) {
+      console.log('❌ Validation errors:', errors);
       return res.status(400).json({ 
         success: false, 
         error: "Datos inválidos", 
@@ -81,28 +86,39 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // Importación dinámica para mejor manejo de errores
-    const SubmitService = require('../services/SubmitService');
+    console.log('✅ Validación pasada, llamando SubmitService...');
     
+    // Importación aquí para mejor debugging
+    const SubmitService = require('../services/SubmitService');
     await SubmitService.pasteSubmitInSpreadsheet({ application, metadata });
 
+    console.log('✅ Submit completado exitosamente');
     return res.status(200).json({ 
       success: true, 
       message: "Datos guardados exitosamente" 
     });
     
   } catch (err) {
-    console.error("❌ Error interno en /api/submit:", err);
+    console.error('❌ Error general en /api/submit:');
+    console.error('📌 Error message:', err.message);
+    console.error('📌 Error stack:', err.stack);
     
-    // Error más específico
     let errorMessage = "Error interno del servidor";
+    let statusCode = 500;
+
     if (err.message.includes('quota')) {
-      errorMessage = "Servicio temporalmente no disponible";
+      errorMessage = "Límite de cuota excedido. Intente más tarde.";
     } else if (err.message.includes('auth')) {
-      errorMessage = "Error de autenticación";
+      errorMessage = "Error de autenticación con Google Sheets";
+    } else if (err.message.includes('PERMISSION_DENIED')) {
+      errorMessage = "Sin permisos para acceder a la hoja de cálculo";
+      statusCode = 403;
+    } else if (err.message.includes('SPREADSHEET_NOT_FOUND')) {
+      errorMessage = "Hoja de cálculo no encontrada";
+      statusCode = 404;
     }
-    
-    return res.status(500).json({ 
+
+    return res.status(statusCode).json({ 
       success: false, 
       error: errorMessage 
     });

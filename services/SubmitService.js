@@ -5,10 +5,12 @@ const { SPREADSHEETS } = require('../constants');
 const moment = require('moment');
 
 async function pasteSubmitInSpreadsheet({ application, metadata }) {
-  let auth;
+  console.log('📝 Iniciando pasteSubmitInSpreadsheet...');
   
+  let auth;
   try {
     const timestamp = moment().format('DD/MM/YYYY HH:mm:ss');
+    console.log('🕐 Timestamp:', timestamp);
 
     const row = [
       timestamp,
@@ -30,19 +32,24 @@ async function pasteSubmitInSpreadsheet({ application, metadata }) {
       application.language || "en"
     ];
 
-    console.log('🔧 Autenticando con Google Sheets...');
+    console.log('📊 Row data preparada:', row.slice(0, 3)); // Log primeros 3 elementos
+
+    console.log('🔑 Obteniendo auth...');
     auth = await authorize();
     
+    console.log('📋 Creando cliente de Sheets...');
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 10000 // 10 segundos timeout
+      timeout: 15000 // 15 segundos timeout
     });
 
-    console.log('📝 Escribiendo en Google Sheets...');
+    console.log('📤 Enviando datos a Google Sheets...');
+    console.log('📋 Spreadsheet ID:', SPREADSHEETS.WEBSITE_SETUP_IONOS);
+    
     const response = await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEETS.WEBSITE_SETUP_IONOS,
-      range: 'Hoja 1!A:Q', // Rango más específico
+      range: 'Hoja 1!A:Q',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { 
@@ -50,18 +57,26 @@ async function pasteSubmitInSpreadsheet({ application, metadata }) {
       }
     });
 
-    console.log('✅ Datos pegados en Google Sheets correctamente');
+    console.log('✅ Datos escritos exitosamente en Sheets');
+    console.log('📈 Celdas actualizadas:', response.data.updates?.updatedCells);
+    
     return response;
     
   } catch (error) {
-    console.error('❌ Error en pasteSubmitInSpreadsheet:', error);
+    console.error('❌ Error en pasteSubmitInSpreadsheet:');
+    console.error('📌 Mensaje:', error.message);
+    console.error('📌 Código:', error.code);
     
-    // Log más detallado del error
-    if (error.code) {
-      console.error('Código de error:', error.code);
-    }
     if (error.response) {
-      console.error('Respuesta de error:', error.response.data);
+      console.error('📌 Respuesta de error:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data
+      });
+    }
+    
+    if (error.errors) {
+      console.error('📌 Errores detallados:', error.errors);
     }
     
     throw error;
