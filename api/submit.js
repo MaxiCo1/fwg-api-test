@@ -48,8 +48,7 @@ app.use((req, res, next) => {
   next();
 });
 
-
-// /api/submit.js - Solo la parte del POST endpoint
+// POST /api/submit con timeout
 app.post("/", async (req, res) => {
   console.log('🟡 Received POST to /api/submit');
   
@@ -69,7 +68,7 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // Validación
+    // Validación de campos requeridos
     const errors = [];
     if (!application.first_name?.trim()) errors.push("El nombre es requerido");
     if (!application.email_address?.trim()) errors.push("El email es requerido");
@@ -88,7 +87,7 @@ app.post("/", async (req, res) => {
 
     console.log('✅ Validación pasada, llamando SubmitService...');
     
-    // Importación aquí para mejor debugging
+    // Importación dinámica para mejor manejo de errores
     const SubmitService = require('../services/SubmitService');
     await SubmitService.pasteSubmitInSpreadsheet({ application, metadata });
 
@@ -136,12 +135,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: 'Error interno del servidor' });
 });
 
-// Export con configuración para serverless
-const handler = serverless(app, {
-  binary: ['image/*', 'application/pdf'],
-  request: function(request, event, context) {
-    request.context = context;
-  }
-});
-
-module.exports = handler;
+// Handler para Vercel
+const handler = serverless(app);
+module.exports = (req, res) => {
+  return handler(req, res);
+};

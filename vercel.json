@@ -1,11 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
     {
       "src": "/api/(.*)",
@@ -13,16 +7,12 @@
       "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"]
     },
     {
-      "src": "/(.*)",
+      "src": "/health",
       "dest": "/api/health.js"
-    }
-  ],
-  "functions": {
-    "api/submit.js": {
-      "maxDuration": 10
     },
-    "api/health.js": {
-      "maxDuration": 5
+    {
+      "src": "/debug-env",
+      "dest": "/api/debug-env.js"
     }
-  }
+  ]
 }

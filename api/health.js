@@ -3,19 +3,20 @@ const { google } = require('googleapis');
 
 async function checkSheets() {
   try {
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY
-      ?.replace(/\\n/g, '\n')
-      ?.replace(/^"|"$/g, '')
-      ?.trim();
-    
-    if (!privateKey || !process.env.GOOGLE_CLIENT_EMAIL) {
-      return { connected: false, error: 'Credenciales faltantes' };
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+
+    if (!privateKey || !clientEmail) {
+      return { connected: false, error: 'Missing credentials' };
     }
+
+    // Clean private key
+    const cleanedPrivateKey = privateKey.replace(/\\n/g, '\n');
 
     const auth = new google.auth.GoogleAuth({
       credentials: {
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: privateKey,
+        client_email: clientEmail,
+        private_key: cleanedPrivateKey,
       },
       scopes: ["https://www.googleapis.com/auth/spreadsheets"]
     });
@@ -32,7 +33,7 @@ async function checkSheets() {
     
     return { connected: true };
   } catch (err) {
-    console.error("❌ Sheets API not available:", err.message);
+    console.error("❌ Sheets API error:", err.message);
     return { 
       connected: false, 
       error: err.message 
@@ -45,7 +46,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -56,6 +57,7 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: "OK",
       timestamp: new Date().toISOString(),
+      nodeVersion: process.version,
       sheets: sheetsCheck.connected ? "CONNECTED" : "DISCONNECTED",
       error: sheetsCheck.error || null
     });

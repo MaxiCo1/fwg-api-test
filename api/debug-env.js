@@ -12,9 +12,9 @@ module.exports = async (req, res) => {
     GOOGLE_CLIENT_EMAIL: clientEmail ? `✅ ${clientEmail}` : '❌ MISSING',
     GOOGLE_PRIVATE_KEY: privateKey ? `✅ Length: ${privateKey.length} chars` : '❌ MISSING',
     SPREADSHEET_ID: spreadsheetId ? `✅ ${spreadsheetId}` : '❌ MISSING',
-    PRIVATE_KEY_FIRST_50: privateKey ? privateKey.substring(0, 50) : 'N/A',
-    PRIVATE_KEY_LAST_50: privateKey ? privateKey.substring(privateKey.length - 50) : 'N/A',
-    NODE_ENV: process.env.NODE_ENV || 'not set'
+    NODE_VERSION: process.version,
+    NODE_ENV: process.env.NODE_ENV || 'not set',
+    TIMESTAMP: new Date().toISOString()
   };
 
   console.log('🔍 Environment Debug Info:', envInfo);
