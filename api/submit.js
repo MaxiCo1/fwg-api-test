@@ -1,10 +1,9 @@
 // /api/submit.js
 const serverless = require('serverless-http');
 const express = require('express');
-const { google } = require('googleapis');
-const { GoogleAuth } = require('google-auth-library');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const SubmitService = require('../../services/SubmitService'); // Nuevo servicio modular
 
 const app = express();
 
@@ -30,88 +29,13 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// --- Google Sheets setup ---
-let sheets;
-let sheetsEnabled = false;
-
-async function initializeSheets() {
-  try {
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY
-      ?.replace(/\\n/g, '\n')
-      ?.replace(/\\\\n/g, '\n')
-      ?.replace(/"/g, '');
-    
-    const auth = new GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: privateKey,
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"]
-    });
-
-    sheets = google.sheets({ version: "v4", auth });
-    const testResponse = await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
-    console.log(`✅ Conectado a Google Sheets: ${testResponse.data.properties.title}`);
-    sheetsEnabled = true;
-  } catch (err) {
-    console.error("❌ Error inicializando Sheets:", err.message);
-    sheetsEnabled = false;
-  }
-}
-
-// --- Funciones auxiliares ---
-function validateApplicationData(appData) {
-  const errors = [];
-  if (!appData?.first_name?.trim()) errors.push("El nombre es requerido");
-  if (!appData?.email_address?.trim()) errors.push("El email es requerido");
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(appData.email_address))
-    errors.push("Formato de email inválido");
-  if (!appData?.project_description?.trim()) errors.push("La descripción del proyecto es requerida");
-  return errors;
-}
-
-function prepareRow(appData, metadata) {
-  const timestamp = new Date().toISOString();
-  return [
-    appData.project_description || "",
-    appData.first_name || "",
-    appData.email_address || "",
-    appData.phone_number || "",
-    appData.web_hosting || "",
-    appData.utm_source || "",
-    appData.utm_medium || "",
-    appData.utm_campaign || "",
-    timestamp,
-    metadata?.mobile ? "Mobile" : "Desktop",
-    metadata?.userAgent || "",
-    appData.fbclid || "",
-    appData.gclid || "",
-    appData.language || "en"
-  ];
-}
-
-async function saveToSheets(row) {
-  if (!sheetsEnabled) await initializeSheets();
-  if (!sheetsEnabled) throw new Error("Sheets API no disponible");
-
-  const response = await sheets.spreadsheets.values.append({
-    spreadsheetId: process.env.SPREADSHEET_ID,
-    range: `Hoja 1!A:Z`,
-    valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [row] },
-  });
-
-  return response;
-}
-
 // --- Logging middleware ---
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
   next();
 });
 
-// --- Rutas ---
+// --- Opciones CORS preflight ---
 app.options("*", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
@@ -120,25 +44,34 @@ app.options("*", (req, res) => {
   res.status(200).end();
 });
 
-// POST explícito en /api/submit
-app.post("/api/submit", async (req, res) => {
+// --- POST /api/submit ---
+app.post("/", async (req, res) => {
   try {
     console.log("✅ POST /api/submit recibido");
     const { application, metadata } = req.body;
+
     if (!application) return res.status(400).json({ success: false, error: "Datos de aplicación requeridos" });
 
-    const errors = validateApplicationData(application);
+    // Validaciones básicas
+    const errors = [];
+    if (!application.first_name?.trim()) errors.push("El nombre es requerido");
+    if (!application.email_address?.trim()) errors.push("El email es requerido");
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(application.email_address))
+      errors.push("Formato de email inválido");
+    if (!application.project_description?.trim()) errors.push("La descripción del proyecto es requerida");
+
     if (errors.length > 0) return res.status(400).json({ success: false, error: "Datos inválidos", details: errors });
 
-    const row = prepareRow(application, metadata);
-    await saveToSheets(row);
+    // Guardar en Sheets usando el servicio modular
+    await SubmitService.pasteSubmitInSpreadsheet({ application, metadata });
 
     return res.status(200).json({ success: true, message: "Datos guardados exitosamente" });
+
   } catch (err) {
     console.error("❌ Error interno en /api/submit:", err);
     return res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 });
 
-// --- Exportar solo handler ---
+// --- Exportar handler ---
 module.exports = serverless(app);
