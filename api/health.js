@@ -2,8 +2,6 @@
 const { google } = require('googleapis');
 const { GoogleAuth } = require('google-auth-library');
 
-let sheetsEnabled = false;
-
 async function checkSheets() {
   try {
     const privateKey = process.env.GOOGLE_PRIVATE_KEY
@@ -21,16 +19,15 @@ async function checkSheets() {
 
     const sheets = google.sheets({ version: "v4", auth });
     await sheets.spreadsheets.get({ spreadsheetId: process.env.SPREADSHEET_ID });
-    sheetsEnabled = true;
-  } catch (error) {
-    console.error("❌ Sheets API not available:", error.message);
-    sheetsEnabled = false;
+    return true;
+  } catch (err) {
+    console.error("❌ Sheets API not available:", err.message);
+    return false;
   }
 }
 
-// Endpoint Vercel
 module.exports = async (req, res) => {
-  await checkSheets();
+  const sheetsEnabled = await checkSheets();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
