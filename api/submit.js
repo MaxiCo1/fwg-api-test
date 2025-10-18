@@ -59,9 +59,6 @@ async function initializeSheets() {
   }
 }
 
-// Inicializa en cold start
-initializeSheets();
-
 // --- Funciones auxiliares ---
 function validateApplicationData(appData) {
   const errors = [];
@@ -108,7 +105,7 @@ async function saveToSheets(row) {
   return response;
 }
 
-// --- Logging ---
+// --- Logging middleware ---
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
   next();
@@ -117,15 +114,16 @@ app.use((req, res, next) => {
 // --- Rutas ---
 app.options("*", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.status(200).end();
 });
 
-// POST /api/submit
-app.post("/", async (req, res) => {
+// POST explícito en /api/submit
+app.post("/api/submit", async (req, res) => {
   try {
+    console.log("✅ POST /api/submit recibido");
     const { application, metadata } = req.body;
     if (!application) return res.status(400).json({ success: false, error: "Datos de aplicación requeridos" });
 
@@ -137,11 +135,10 @@ app.post("/", async (req, res) => {
 
     return res.status(200).json({ success: true, message: "Datos guardados exitosamente" });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error interno en /api/submit:", err);
     return res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 });
 
-// --- Exportar ---
+// --- Exportar solo handler ---
 module.exports = serverless(app);
-
