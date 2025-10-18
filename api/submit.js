@@ -3,7 +3,7 @@ const serverless = require('serverless-http');
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const SubmitService = require('../../services/SubmitService'); // Nuevo servicio modular
+const SubmitService = require('../services/SubmitService'); // Nuevo servicio modular
 
 const app = express();
 
