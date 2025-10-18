@@ -143,5 +143,5 @@ app.post("/", async (req, res) => {
 });
 
 // --- Exportar ---
-module.exports = app;
-module.exports.handler = serverless(app);
+module.exports = serverless(app);
+
